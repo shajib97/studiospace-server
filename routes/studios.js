@@ -1,5 +1,6 @@
-const exptress = require("express");
-const router = exptress.Router();
+const express = require("express");
+const { ObjectId } = require("mongodb");
+const router = express.Router();
 
 router.get("/featured", async (req, res) => {
   try {
@@ -31,6 +32,60 @@ router.get("/featured", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Unable to load featured studios. Please try again.",
+    });
+  }
+});
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid studio ID.",
+      });
+    }
+
+    const db = req.app.locals.db;
+
+    const studio = await db.collection("studios").findOne(
+      { _id: new ObjectId(id) },
+      {
+        projection: {
+          title: 1,
+          category: 1,
+          hourlyRate: 1,
+          securityDeposit: 1,
+          maxCapacity: 1,
+          location: 1,
+          imageUrl: 1,
+          gallery: 1,
+          amenities: 1,
+          overview: 1,
+          ownerName: 1,
+          rating: 1,
+          reviewCount: 1,
+        },
+      },
+    );
+
+    if (!studio) {
+      return res.status(404).json({
+        success: false,
+        message: "Studio not found.",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: studio,
+    });
+  } catch (error) {
+    console.error("Failed to fetch studio details:", error.message);
+
+    res.status(500).json({
+      success: false,
+      message: "Unable to load studio details. Please try again.",
     });
   }
 });
