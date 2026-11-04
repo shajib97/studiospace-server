@@ -1,4 +1,5 @@
 require("dotenv").config();
+const studioRoutes = require("./routes/studios");
 
 const express = require("express");
 const cors = require("cors");
@@ -15,6 +16,8 @@ app.use(
 );
 
 app.use(express.json({ limit: "1mb" }));
+
+app.use("/api/studios", studioRoutes);
 
 app.get("/", (req, res) => {
   res.json({
