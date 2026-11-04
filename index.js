@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const connectDB = require("./config/db");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -22,6 +23,19 @@ app.get("/", (req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`StudioSpace server running on http://localhost:${port}`);
-});
+async function startServer() {
+  try {
+    const db = await connectDB();
+
+    app.locals.db = db;
+
+    app.listen(port, () => {
+      console.log(`StudioSpace server running on http://localhost:${port}`);
+    });
+  } catch (error) {
+    console.error("Server startup failed:", error.message);
+    process.exit(1);
+  }
+}
+
+startServer();
