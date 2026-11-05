@@ -1,4 +1,6 @@
 require("dotenv").config();
+const cookieParser = require("cookie-parser");
+const verifyJWT = require("./middleware/verifyJWT");
 const studioRoutes = require("./routes/studios");
 
 const express = require("express");
@@ -16,6 +18,15 @@ app.use(
 );
 
 app.use(express.json({ limit: "1mb" }));
+
+app.use(cookieParser());
+
+app.get("/api/auth/check", verifyJWT, (req, res) => {
+  res.json({
+    success: true,
+    userId: req.auth.userId,
+  });
+});
 
 app.use("/api/studios", studioRoutes);
 
