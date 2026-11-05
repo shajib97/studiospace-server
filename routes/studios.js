@@ -1,6 +1,7 @@
 const express = require("express");
 const { ObjectId } = require("mongodb");
 const verifyJWT = require("../middleware/verifyJWT");
+
 const router = express.Router();
 
 const categories = [
@@ -44,6 +45,42 @@ router.get("/featured", async (req, res) => {
     });
   }
 });
+
+router.get("/mine", verifyJWT, async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
+
+  try {
+    const db = req.app.locals.db;
+
+    const studios = await db
+      .collection("studios")
+      .find({ ownerId: req.auth.userId })
+      .sort({ _id: -1 })
+      .project({
+        title: 1,
+        category: 1,
+        hourlyRate: 1,
+        location: 1,
+        imageUrl: 1,
+        rating: 1,
+        reviewCount: 1,
+      })
+      .toArray();
+
+    return res.json({
+      success: true,
+      data: studios,
+    });
+  } catch (error) {
+    console.error("Failed to load studio listings:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load your studios. Please try again.",
+    });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -98,6 +135,7 @@ router.get("/:id", async (req, res) => {
     });
   }
 });
+
 router.get("/", async (req, res) => {
   try {
     const category = req.query.category;
@@ -144,6 +182,7 @@ router.get("/", async (req, res) => {
     });
   }
 });
+
 router.post("/", verifyJWT, async (req, res) => {
   if (req.get("origin") !== process.env.CLIENT_URL) {
     return res.status(403).json({
@@ -271,6 +310,48 @@ router.post("/", verifyJWT, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Unable to add the studio. Please try again.",
+    });
+  }
+});
+router.delete("/:id", verifyJWT, async (req, res) => {
+  if (req.get("origin") !== process.env.CLIENT_URL) {
+    return res.status(403).json({
+      success: false,
+      message: "Request origin is not allowed.",
+    });
+  }
+
+  const { id } = req.params;
+
+  if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid studio ID.",
+    });
+  }
+
+  try {
+    const db = req.app.locals.db;
+
+    const result = await db.collection("studios").deleteOne({
+      _id: new ObjectId(id),
+      ownerId: req.auth.userId,
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Studio not found in your listings.",
+      });
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to delete studio:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to delete the studio. Please try again.",
     });
   }
 });
