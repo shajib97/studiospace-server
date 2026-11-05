@@ -1,6 +1,15 @@
 const express = require("express");
 const { ObjectId } = require("mongodb");
+const verifyJWT = require("../middleware/verifyJWT");
 const router = express.Router();
+
+const categories = [
+  "Photo Studio",
+  "Film Stage",
+  "Podcast Lounge",
+  "Music Suite",
+  "Workshop",
+];
 
 router.get("/featured", async (req, res) => {
   try {
@@ -91,14 +100,6 @@ router.get("/:id", async (req, res) => {
 });
 router.get("/", async (req, res) => {
   try {
-    const categories = [
-      "Photo Studio",
-      "Film Stage",
-      "Podcast Lounge",
-      "Music Suite",
-      "Workshop",
-    ];
-
     const category = req.query.category;
     const filter = {};
 
@@ -143,5 +144,134 @@ router.get("/", async (req, res) => {
     });
   }
 });
+router.post("/", verifyJWT, async (req, res) => {
+  if (req.get("origin") !== process.env.CLIENT_URL) {
+    return res.status(403).json({
+      success: false,
+      message: "Request origin is not allowed.",
+    });
+  }
 
+  if (!req.is("application/json")) {
+    return res.status(415).json({
+      success: false,
+      message: "Send the studio details as JSON.",
+    });
+  }
+
+  const {
+    title,
+    category,
+    hourlyRate,
+    securityDeposit,
+    maxCapacity,
+    location,
+    imageUrl,
+    amenities,
+    overview,
+  } = req.body ?? {};
+
+  const textFields = [title, location, overview];
+
+  for (const field of textFields) {
+    if (typeof field !== "string" || !field.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Title, location, and overview are required.",
+      });
+    }
+  }
+
+  if (!categories.includes(category)) {
+    return res.status(400).json({
+      success: false,
+      message: "Please select a valid studio category.",
+    });
+  }
+
+  if (
+    !Number.isFinite(hourlyRate) ||
+    hourlyRate <= 0 ||
+    !Number.isFinite(securityDeposit) ||
+    securityDeposit < 0 ||
+    !Number.isInteger(maxCapacity) ||
+    maxCapacity < 1
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Enter a valid hourly rate, deposit, and capacity.",
+    });
+  }
+
+  if (
+    typeof imageUrl !== "string" ||
+    !imageUrl.startsWith("https://i.ibb.co/")
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Please upload a studio photo using ImgBB.",
+    });
+  }
+
+  if (
+    !Array.isArray(amenities) ||
+    amenities.some((item) => typeof item !== "string" || !item.trim())
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Amenities must be a list of names.",
+    });
+  }
+
+  try {
+    const db = req.app.locals.db;
+    const userId = req.auth.userId;
+
+    const ownerId = /^[a-fA-F0-9]{24}$/.test(userId)
+      ? new ObjectId(userId)
+      : userId;
+
+    const owner = await db
+      .collection("user")
+      .findOne({ _id: ownerId }, { projection: { name: 1, email: 1 } });
+
+    if (!owner) {
+      return res.status(401).json({
+        success: false,
+        message: "Your account could not be found. Please log in again.",
+      });
+    }
+
+    const result = await db.collection("studios").insertOne({
+      title: title.trim(),
+      category,
+      hourlyRate,
+      securityDeposit,
+      maxCapacity,
+      location: location.trim(),
+      imageUrl,
+      amenities: amenities.map((item) => item.trim()),
+      overview: overview.trim(),
+      ownerId: userId,
+      ownerName: owner.name,
+      ownerEmail: owner.email,
+      rating: 0,
+      reviewCount: 0,
+      createdAt: new Date(),
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Studio added successfully.",
+      studioId: result.insertedId,
+    });
+  } catch (error) {
+    console.error("Failed to add studio:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to add the studio. Please try again.",
+    });
+  }
+});
 module.exports = router;
