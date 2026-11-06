@@ -111,6 +111,7 @@ router.get("/:id", async (req, res) => {
           ownerName: 1,
           rating: 1,
           reviewCount: 1,
+          reviews: 1,
         },
       },
     );
@@ -135,7 +136,41 @@ router.get("/:id", async (req, res) => {
     });
   }
 });
+router.get("/mine/:id", verifyJWT, async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
 
+  const { id } = req.params;
+
+  if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid studio ID.",
+    });
+  }
+
+  try {
+    const studio = await req.app.locals.db.collection("studios").findOne({
+      _id: new ObjectId(id),
+      ownerId: req.auth.userId,
+    });
+
+    if (!studio) {
+      return res.status(404).json({
+        success: false,
+        message: "Studio not found in your listings.",
+      });
+    }
+
+    return res.json({ success: true, data: studio });
+  } catch (error) {
+    console.error("Failed to load studio for editing:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load the studio.",
+    });
+  }
+});
 router.get("/", async (req, res) => {
   try {
     const category = req.query.category;
@@ -183,7 +218,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.post("/", verifyJWT, async (req, res) => {
+function validateStudio(req, res, next) {
   if (req.get("origin") !== process.env.CLIENT_URL) {
     return res.status(403).json({
       success: false,
@@ -210,9 +245,7 @@ router.post("/", verifyJWT, async (req, res) => {
     overview,
   } = req.body ?? {};
 
-  const textFields = [title, location, overview];
-
-  for (const field of textFields) {
+  for (const field of [title, location, overview]) {
     if (typeof field !== "string" || !field.trim()) {
       return res.status(400).json({
         success: false,
@@ -242,14 +275,16 @@ router.post("/", verifyJWT, async (req, res) => {
     });
   }
 
-  if (
-    typeof imageUrl !== "string" ||
-    !imageUrl.startsWith("https://i.ibb.co/")
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "Please upload a studio photo using ImgBB.",
-    });
+  if (req.method === "POST" || imageUrl !== undefined) {
+    if (
+      typeof imageUrl !== "string" ||
+      !imageUrl.startsWith("https://i.ibb.co/")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload a studio photo using ImgBB.",
+      });
+    }
   }
 
   if (
@@ -262,6 +297,25 @@ router.post("/", verifyJWT, async (req, res) => {
     });
   }
 
+  req.studioData = {
+    title: title.trim(),
+    category,
+    hourlyRate,
+    securityDeposit,
+    maxCapacity,
+    location: location.trim(),
+    amenities: amenities.map((item) => item.trim()),
+    overview: overview.trim(),
+  };
+
+  if (imageUrl !== undefined) {
+    req.studioData.imageUrl = imageUrl;
+  }
+
+  next();
+}
+
+router.post("/", verifyJWT, validateStudio, async (req, res) => {
   try {
     const db = req.app.locals.db;
     const userId = req.auth.userId;
@@ -282,15 +336,7 @@ router.post("/", verifyJWT, async (req, res) => {
     }
 
     const result = await db.collection("studios").insertOne({
-      title: title.trim(),
-      category,
-      hourlyRate,
-      securityDeposit,
-      maxCapacity,
-      location: location.trim(),
-      imageUrl,
-      amenities: amenities.map((item) => item.trim()),
-      overview: overview.trim(),
+      ...req.studioData,
       ownerId: userId,
       ownerName: owner.name,
       ownerEmail: owner.email,
@@ -313,6 +359,54 @@ router.post("/", verifyJWT, async (req, res) => {
     });
   }
 });
+
+router.patch("/:id", verifyJWT, validateStudio, async (req, res) => {
+  const { id } = req.params;
+
+  if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid studio ID.",
+    });
+  }
+
+  try {
+    const db = req.app.locals.db;
+
+    const result = await db.collection("studios").updateOne(
+      {
+        _id: new ObjectId(id),
+        ownerId: req.auth.userId,
+      },
+      {
+        $set: {
+          ...req.studioData,
+          updatedAt: new Date(),
+        },
+      },
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Studio not found in your listings.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Studio updated successfully.",
+    });
+  } catch (error) {
+    console.error("Failed to update studio:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to update the studio. Please try again.",
+    });
+  }
+});
+
 router.delete("/:id", verifyJWT, async (req, res) => {
   if (req.get("origin") !== process.env.CLIENT_URL) {
     return res.status(403).json({

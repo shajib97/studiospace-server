@@ -2,6 +2,7 @@ require("dotenv").config();
 const cookieParser = require("cookie-parser");
 const verifyJWT = require("./middleware/verifyJWT");
 const studioRoutes = require("./routes/studios");
+const bookingRoutes = require("./routes/bookings");
 
 const express = require("express");
 const cors = require("cors");
@@ -29,6 +30,7 @@ app.get("/api/auth/check", verifyJWT, (req, res) => {
 });
 
 app.use("/api/studios", studioRoutes);
+app.use("/api/bookings", bookingRoutes);
 
 app.get("/", (req, res) => {
   res.json({
